@@ -1,5 +1,7 @@
 # Simultaneous semantic segmentation and outlier detection
 
+This version is only made to create and store the WD-Pascal dataset. The evaluation will fail (don't know why)
+
 Code to reproduce the results from
 <div class="highlight highlight-html"><pre>
 <b><a href=https://arxiv.org/abs/1908.01098>Simultaneous Semantic Segmentation and Outlier Detection in Presence of Domain Shift</a>
@@ -37,6 +39,7 @@ output uniform distribution on outlier pixels. The two head model contains a seg
 If `save-outputs` is set to 1, the script saves the outputs of outlier detection and semantic segmentation, as well as the combined output into `./outputs/save_name/{confidence|segmentation|seg_with_conf}`. The `reshape-size` parameter represents the size of the smaller side of the input image.
 
 ```
-python inference.py --model models/base.py --params params/base_oe.pt --save-outputs=0 --reshape-size=540 --verbose=1 --AP-iters 5
-python inference.py --model models/two_head.py --params params/two_head.pt --save-outputs=1 --save-name="two_head" --reshape-size=540 --verbose=0 --AP-iters 5
+python inference.py --model models/base.py --params params/base_oe.pt --save-outputs=0 --reshape-size=1080 --verbose=1 --AP-iters 5
+python inference.py --model models/two_head.py --params params/two_head.pt --save-outputs=1 --save-name="two_head" --reshape-size=1080 --verbose=0 --AP-iters 5
 ```
+
