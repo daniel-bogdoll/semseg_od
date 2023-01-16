@@ -23,19 +23,25 @@ import evaluation
 import pdb
 import utils
 import random
+from torchvision.utils import save_image
+from torchvision import transforms
+
+from matplotlib import cm
+
 
 def odin(img, model, T=1, step=0.0005, num_steps=1, target_size=None):
     img_odin = img
     for i in range(num_steps):
         model(img_odin, target_size)
-        logits = model.out.to('cuda:1')
-        softmax = F.softmax(logits/T, dim=1)
+        logits = model.out.to("cuda:1")
+        softmax = F.softmax(logits / T, dim=1)
         softmax_max_T = softmax.max(1)[0]
         loss_image = torch.mean(-torch.log(softmax_max_T))
         grad = torch.autograd.grad(loss_image, img_odin)[0]
         grad_abs = grad.abs().clamp(1e-10)
         img_odin = img_odin - step * (grad / grad_abs)
-    return img_odin.to('cuda:0')
+    return img_odin.to("cuda:0")
+
 
 def colorize_labels(y, class_colors):
     width = y.shape[1]
@@ -46,6 +52,7 @@ def colorize_labels(y, class_colors):
         cnum = cpos.sum() // 3
         y_rgb[cpos] = np.array(class_colors[cid][:3] * cnum, dtype=np.uint8)
     return y_rgb
+
 
 def store_images(img_raw, pred, true, class_info, name):
     img_pred = colorize_labels(pred, class_info)
@@ -62,106 +69,109 @@ def store_images(img_raw, pred, true, class_info, name):
         num_errors = error_mask.sum()
         img1 = np.concatenate((img_raw, img_true), axis=1)
         img2 = np.concatenate((img_errors, img_pred), axis=1)
-        img = np.concatenate((img1, img2),axis=0)
-        filename = '%s_%07d.jpg' % (name, num_errors)
+        img = np.concatenate((img1, img2), axis=0)
+        filename = "%s_%07d.jpg" % (name, num_errors)
         save_path = join(save_dir, filename)
     else:
         line = np.zeros((5, pred.shape[1], 3)).astype(np.uint8)
         img = np.concatenate((img_raw, line, img_pred), axis=0)
-        save_path = join(save_dir, '%s.jpg' % (name))
+        save_path = join(save_dir, "%s.jpg" % (name))
 
     img = pimg.fromarray(img)
     saver_pool.apply_async(img.save, [save_path])
+
 
 def get_conf_img(img_raw, conf, conf_type):
     conf = (conf * (-1)) + 1
     conf_broad = np.reshape(conf, [conf.shape[0], conf.shape[1], 1])
 
-    conf_save = plt.get_cmap('jet')(conf)
+    conf_save = plt.get_cmap("jet")(conf)
     conf_save = (conf_save * 255).astype(np.uint8)[:, :, :3]
     img = conf_save
     return img
 
-def store_conf(img_raw, conf, name, conf_type='logit'):
+
+def store_conf(img_raw, conf, name, conf_type="logit"):
     conf = conf[0]
-    img_conf = get_conf_img(img_raw, conf, 'conf_' + conf_type)
+    img_conf = get_conf_img(img_raw, conf, "conf_" + conf_type)
     img = np.concatenate([img_raw, img_conf], axis=0)
-    save_path = join(save_dir, 'confidence',
-                     '%s_%s.jpg' % (name, conf_type))
+    save_path = join(save_dir, "confidence", "%s_%s.jpg" % (name, conf_type))
     img = pimg.fromarray(img)
     saver_pool.apply_async(img.save, [save_path])
+
 
 def store_outputs(batch, pred, pred_w_outlier, conf_probs):
     pred = pred.detach().cpu().numpy().astype(np.int32)
     pred_w_outlier = pred_w_outlier.detach().cpu().numpy().astype(np.int32)
     conf_probs = conf_probs.detach().cpu().numpy()
-    img_raw = transform.denormalize(batch['image'][0],
-                                    batch['mean'][0].numpy(), batch['std'][0].numpy())
-    true = batch['labels'][0].numpy().astype(np.int32)
-    name = batch['name'][0]
-    store_images(img_raw, pred, true, class_info, 'segmentation/'+name)
-    store_images(img_raw, pred_w_outlier, true, class_info, 'seg_with_conf/'+ name)
-    store_conf(img_raw, conf_probs, name, 'probs')
+    img_raw = transform.denormalize(batch["image"][0], batch["mean"][0].numpy(), batch["std"][0].numpy())
+    true = batch["labels"][0].numpy().astype(np.int32)
+    name = batch["name"][0]
+    store_images(img_raw, pred, true, class_info, "segmentation/" + name)
+    store_images(img_raw, pred_w_outlier, true, class_info, "seg_with_conf/" + name)
+    store_conf(img_raw, conf_probs, name, "probs")
+
 
 def evaluate_segmentation():
     conf_mats = {}
-    conf_mats['seg'] = torch.zeros((num_classes, num_classes), dtype=torch.int64).cuda()
-    conf_mats['seg_w_outlier'] = torch.zeros((num_classes+1, num_classes+1), dtype=torch.int64).cuda()
+    conf_mats["seg"] = torch.zeros((num_classes, num_classes), dtype=torch.int64).cuda()
+    conf_mats["seg_w_outlier"] = torch.zeros((num_classes + 1, num_classes + 1), dtype=torch.int64).cuda()
 
     log_interval = max(len(wd_data_loader) // 5, 1)
     for step, batch in enumerate(wd_data_loader):
         try:
-            pred, pred_w_outlier, conf_probs = evaluation.segment_image(model, batch, args, conf_mats, ood_id, num_classes)
+            pred, pred_w_outlier, conf_probs = evaluation.segment_image(
+                model, batch, args, conf_mats, ood_id, num_classes
+            )
             if args.save_outputs:
                 store_outputs(batch, pred, pred_w_outlier, conf_probs)
 
         except Exception as e:
-            print('failed on image: {}'.format(batch['name'][0]))
-            print('error: {}'.format(e))
+            print("failed on image: {}".format(batch["name"][0]))
+            print("error: {}".format(e))
             print(traceback.format_exc())
 
         if step % log_interval == 0:
-            print('step {} / {}'.format(step, len(wd_data_loader)))
+            print("step {} / {}".format(step, len(wd_data_loader)))
 
-    print('\nSegmentation:')
-    conf_mats['seg'] = conf_mats['seg'].cpu().numpy()
-    evaluation.compute_errors(conf_mats['seg'], 'Validation', class_info, nc=num_classes, verbose=True)
-    print('\nSegmentation with confidence:')
-    conf_mats['seg_w_outlier'] = conf_mats['seg_w_outlier'].cpu().numpy()
-    evaluation.compute_errors(conf_mats['seg_w_outlier'], 'Validation', class_info, nc=num_classes)
+    print("\nSegmentation:")
+    conf_mats["seg"] = conf_mats["seg"].cpu().numpy()
+    evaluation.compute_errors(conf_mats["seg"], "Validation", class_info, nc=num_classes, verbose=True)
+    print("\nSegmentation with confidence:")
+    conf_mats["seg_w_outlier"] = conf_mats["seg_w_outlier"].cpu().numpy()
+    evaluation.compute_errors(conf_mats["seg_w_outlier"], "Validation", class_info, nc=num_classes)
+
 
 def evaluate_AP_negative():
     gt_wd = torch.ByteTensor([])
     conf_wd = torch.FloatTensor([])
 
     log_interval = 20
-    print('\ninliers:')
+    print("\ninliers:")
     for step, batch in enumerate(wd_data_loader):
-        img = torch.autograd.Variable(batch['image'].cuda(
-                non_blocking=True), requires_grad=True)
+        img = torch.autograd.Variable(batch["image"].cuda(non_blocking=True), requires_grad=True)
         if args.odin:
-            img = odin(img, model, T=args.odin_T, step=args.odin_step, target_size=batch['image'].shape[2:])
+            img = odin(img, model, T=args.odin_T, step=args.odin_step, target_size=batch["image"].shape[2:])
         with torch.no_grad():
-            _, conf_probs = model.prediction(img, batch['image'].shape[2:])
+            _, conf_probs = model.prediction(img, batch["image"].shape[2:])
             conf_probs = conf_probs.view(-1)
 
-        gt_wd = torch.cat((gt_wd,torch.zeros(conf_probs.shape[0], dtype=torch.uint8)))
+        gt_wd = torch.cat((gt_wd, torch.zeros(conf_probs.shape[0], dtype=torch.uint8)))
         conf_wd = torch.cat((conf_wd, conf_probs.cpu()))
 
         if step % log_interval == 0:
-            print('step {} / {}'.format(step, len(wd_data_loader)))
+            print("step {} / {}".format(step, len(wd_data_loader)))
 
     AP = []
     for i in range(args.AP_iters):
-        pixel_counter = (gt_wd==0).sum()
+        pixel_counter = (gt_wd == 0).sum()
         gt = gt_wd.clone()
         conf = conf_wd.clone()
-        print('\noutliers:')
+        print("\noutliers:")
         for step, batch in enumerate(lsun_data_loader):
-            img = torch.autograd.Variable(batch['image'].cuda(
-                    non_blocking=True), requires_grad=True)
+            img = torch.autograd.Variable(batch["image"].cuda(non_blocking=True), requires_grad=True)
             with torch.no_grad():
-                _, conf_probs = model.prediction(img, batch['image'].shape[2:])
+                _, conf_probs = model.prediction(img, batch["image"].shape[2:])
                 conf_probs = conf_probs.view(-1)
 
             gt = torch.cat((gt, torch.ones(conf_probs.shape[0], dtype=torch.uint8)))
@@ -169,7 +179,7 @@ def evaluate_AP_negative():
             torch.cuda.empty_cache()
 
             if step % log_interval == 0:
-                print('step {} / {}'.format(step, len(lsun_data_loader)))
+                print("step {} / {}".format(step, len(lsun_data_loader)))
 
             pixel_counter -= conf_probs.shape[0]
             if pixel_counter < 0:
@@ -181,7 +191,8 @@ def evaluate_AP_negative():
         AP.append(average_precision)
 
     AP = np.array(AP)
-    print('negative images average precision: {} +/- {}'.format(AP.mean(),AP.std()))
+    print("negative images average precision: {} +/- {}".format(AP.mean(), AP.std()))
+
 
 def evaluate_AP_patches():
     log_interval = 20
@@ -191,19 +202,18 @@ def evaluate_AP_patches():
         gt = torch.ByteTensor([])
         conf = torch.FloatTensor([])
         for step, batch in enumerate(pascal_wd_data_loader):
-            img = torch.autograd.Variable(batch['image'].cuda(
-                    non_blocking=True), requires_grad=True)
+            img = torch.autograd.Variable(batch["image"].cuda(non_blocking=True), requires_grad=True)
             if args.odin:
-                img = odin(img, model, T=args.odin_T, step=args.odin_step, target_size=batch['image'].shape[2:])
+                img = odin(img, model, T=args.odin_T, step=args.odin_step, target_size=batch["image"].shape[2:])
             with torch.no_grad():
-                _, conf_probs = model.predictions(img, batch['image'].shape[2:])
+                _, conf_probs = model.predictions(img, batch["image"].shape[2:])
                 conf_probs = conf_probs.view(-1)
 
-            gt = torch.cat((gt, batch['labels'].view(-1)))
+            gt = torch.cat((gt, batch["labels"].view(-1)))
             conf = torch.cat((conf, conf_probs.cpu()))
 
             if step % log_interval == 0:
-                print('step {} / {}'.format(step, len(pascal_wd_data_loader)))
+                print("step {} / {}".format(step, len(pascal_wd_data_loader)))
 
         conf = conf * -1 + 1
         average_precision = sm.average_precision_score(gt, conf)
@@ -211,38 +221,41 @@ def evaluate_AP_patches():
         AP.append(average_precision)
 
     AP = np.array(AP)
-    print('negative images average precision: {} +/- {}'.format(AP.mean(),AP.std()))
+    print("negative images average precision: {} +/- {}".format(AP.mean(), AP.std()))
+
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str)
-    parser.add_argument('--params', type=str)
-    parser.add_argument('--save-outputs', type=int, default=0)
-    parser.add_argument('--reshape-size', type=int, default=1)
-    parser.add_argument('--verbose', type=int, default=1)
-    parser.add_argument('--AP-iters', type=int, default=50)
-    parser.add_argument('--save-name', type=str, default='')
-    parser.add_argument('--data-path', type=str, default='./data/')
-    parser.add_argument('--odin', type=int, default=0)
-    parser.add_argument('--odin-T', type=float, default=0)
-    parser.add_argument('--odin-step', type=float, default=0)
+    parser.add_argument("--model", type=str)
+    parser.add_argument("--params", type=str)
+    parser.add_argument("--save-outputs", type=int, default=0)
+    parser.add_argument("--reshape-size", type=int, default=1)
+    parser.add_argument("--verbose", type=int, default=1)
+    parser.add_argument("--AP-iters", type=int, default=50)
+    parser.add_argument("--save-name", type=str, default="")
+    parser.add_argument("--data-path", type=str, default="./data")
+    parser.add_argument("--odin", type=int, default=0)
+    parser.add_argument("--odin-T", type=float, default=0)
+    parser.add_argument("--odin-step", type=float, default=0)
     return parser.parse_args()
+
 
 def prepare_for_saving():
     global saver_pool, save_dir
 
     saver_pool = Pool(processes=4)
-    save_dir = join('./outputs', args.save_name)
+    save_dir = join("./outputs", args.save_name)
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)
 
-    split_classes = ['segmentation', 'seg_with_conf', 'confidence']
+    split_classes = ["segmentation", "seg_with_conf", "confidence"]
 
     for class_name in split_classes:
         os.makedirs(join(save_dir, class_name), exist_ok=True)
 
-    log_file = open(join(save_dir, 'log.txt'), 'w')
+    log_file = open(join(save_dir, "log.txt"), "w")
     sys.stdout = utils.Logger(sys.stdout, log_file)
+
 
 torch.manual_seed(0)
 random.seed(0)
@@ -253,36 +266,43 @@ if args.save_outputs:
     prepare_for_saving()
 
 
-net_model = utils.import_module('net_model', args.model)
+net_model = utils.import_module("net_model", args.model)
 
 model = net_model.build(args=args)
-state_dict = torch.load(args.params,
-                        map_location=lambda storage, loc: storage)
+state_dict = torch.load(args.params, map_location=lambda storage, loc: storage)
 model.load_state_dict(state_dict, convert=True)
 model.cuda()
 model = model.eval()
 
 
-
 wd_dataset = wd_reader.DatasetReader(args)
-#wd_dataset = city_reader.DatasetReader(args, subset='val')
-wd_data_loader = DataLoader(wd_dataset, batch_size=1,
-                         num_workers=8, pin_memory=True, shuffle=False)
+# wd_dataset = city_reader.DatasetReader(args, subset='val')
+wd_data_loader = DataLoader(wd_dataset, batch_size=1, num_workers=8, pin_memory=True, shuffle=False)
 
 class_info = wd_dataset.class_info
 ignore_id = wd_dataset.ignore_id
 ood_id = wd_dataset.ood_id
 num_classes = wd_dataset.num_classes
 
-#lsun_dataset = lsun_reader.DatasetReader(args)
-#lsun_data_loader = DataLoader(lsun_dataset, batch_size=1,
+# lsun_dataset = lsun_reader.DatasetReader(args)
+# lsun_data_loader = DataLoader(lsun_dataset, batch_size=1,
 #                         num_workers=1, pin_memory=True, shuffle=True)
 pascal_wd_dataset = pascal_wd_reader.DatasetReader(args)
-pascal_wd_data_loader = DataLoader(pascal_wd_dataset, batch_size=1,
-                         num_workers=0, pin_memory=True, shuffle=True)
+pascal_wd_data_loader = DataLoader(pascal_wd_dataset, batch_size=1, num_workers=71, pin_memory=True, shuffle=False)
+dataiter = iter(pascal_wd_data_loader)
 
-
+# for (idx, batch) in enumerate(pascal_wd_data_loader):
+#
+#    for image in batch["image"]:
+#        img_rgb = transforms.ToPILImage()(image)
+#        img_rgb.save("./outputs/wd-pascal/" + str(idx) + "_img.png")
+#        save_image(image, "./outputs/wd-pascal/" + str(idx) + "_torch_img.png")
+#    for label in batch["labels"]:
+#        np_arr = label.cpu().detach().numpy()
+#        np.save("./outputs/wd-pascal/" + str(idx), np_arr)
+#        img = pimg.fromarray(np.uint8(cm.gist_earth(np_arr) * 255))
+#        img.save("./outputs/wd-pascal/" + str(idx) + "_label.png")
 
 evaluate_segmentation()
-#evaluate_AP_negative()
+# evaluate_AP_negative()
 evaluate_AP_patches()

@@ -26,14 +26,6 @@ Create a <a href=http://www.wilddash.cc/accounts/login>Wilddash account</a> and 
 
 Either download and extract to `data/` or create a symbolic link `data/wd_val_01`
 
-### Prepare libs:
-If you are no Linux, you can build the necessary libs by running the build script:
-```bash
-cd libs
-./build.sh
-```
-If you are on Windows, use the script as a guide.
-
 ### Run inference
 The inference script performs validation of segmentation and outlier detection. Semantic segmentation is validated by measuring mean intersection over union (mIoU) on the WildDash validation dataset.
 
