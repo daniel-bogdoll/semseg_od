@@ -1,1 +1,4 @@
 /env/
+/data/VOCdevkit/
+/data/wd_val_01/
+/outputs/wd-pascal/
