@@ -1,4 +1,5 @@
 /env/
 /data/VOCdevkit/
 /data/wd_val_01/
+/data/anonymized/
 /outputs/wd-pascal/
